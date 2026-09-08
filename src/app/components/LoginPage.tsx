@@ -214,10 +214,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </div>
             <div className="min-w-0">
               <h1 className="text-base font-bold tracking-tight text-sidebar-foreground leading-tight truncate">
-                Metropolitan Referral Hospital
+                Puche Medical Clinic
               </h1>
               <p className="text-[11px] text-sidebar-foreground/70 font-medium truncate mt-0.5">
-                HMIS Enterprise Platform • Facility: SHA-FAC-7890-KEN
+                Clinical Management Platform • Facility: SHA-FAC-7890-KEN
               </p>
             </div>
           </div>

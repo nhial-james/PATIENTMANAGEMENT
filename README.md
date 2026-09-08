@@ -1,4 +1,4 @@
-# Metropolitan Referral Hospital – HMIS Enterprise Platform
+# Puche Medical Clinic – Clinical Management Platform
 
 **Facility Code:** `SHA-FAC-7890-KEN`  
 **Architecture:** React 18, Vite, TypeScript, Tailwind CSS, Express, Prisma ORM, SQLite  
@@ -8,7 +8,7 @@
 
 ## System Overview
 
-Metropolitan Referral Hospital HMIS is a full-stack, modular Hospital Management Information System designed for healthcare facilities. The system supports full clinical, operational, financial, and administrative workflows across 11 integrated departments.
+Puche Medical Clinic Clinical Management Platform is a full-stack, modular clinic and healthcare information system. The system supports full clinical, operational, financial, and administrative workflows across 11 integrated departments.
 
 ---
 
@@ -104,4 +104,4 @@ Universal Password for all demo accounts: **`Hospital2026!`**
 
 ## License
 
-Private Enterprise Application for Metropolitan Referral Hospital.
+Private Enterprise Application for Puche Medical Clinic.

@@ -494,10 +494,10 @@ model SHAClaim {
 
 model HospitalSettings {
   id             String  @id @default("1")
-  hospitalName   String  @default("Metropolitan Referral Hospital")
-  address        String  @default("Hospital Road, P.O. Box 40200")
+  hospitalName   String  @default("Puche Medical Clinic")
+  address        String  @default("Clinic Road, P.O. Box 40200")
   phone          String  @default("+254 700 000 000")
-  email          String  @default("info@metrohospital.org")
+  email          String  @default("info@pucheclinic.org")
   currency       String  @default("KES")
   motto          String? @default("Excellence in Patient Care & Healing")
   shaFacilityId  String? @default("SHA-FAC-7890")

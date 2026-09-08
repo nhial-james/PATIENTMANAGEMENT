@@ -197,11 +197,11 @@ export function Sidebar({
 
           {isExpanded && (
             <div className="mt-2.5 text-center">
-              <h2 className="text-sidebar-foreground font-semibold text-base whitespace-nowrap">
-                HMIS
+              <h2 className="text-sidebar-foreground font-semibold text-sm whitespace-nowrap">
+                Puche Medical Clinic
               </h2>
-              <p className="text-sidebar-foreground/70 text-xs whitespace-nowrap mt-0.5">
-                Hospital Management
+              <p className="text-sidebar-foreground/70 text-[11px] whitespace-nowrap mt-0.5">
+                Clinical Management System
               </p>
             </div>
           )}

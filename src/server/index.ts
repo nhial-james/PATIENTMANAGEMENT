@@ -34,7 +34,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Health Check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'HMIS Backend API Engine', timestamp: new Date() });
+  res.json({ status: 'ok', service: 'Puche Medical Clinic Backend API Engine', timestamp: new Date() });
 });
 
 // Mount Routes
@@ -60,7 +60,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 HMIS Production Backend API server running on http://localhost:${PORT}`);
+  console.log(`🚀 Puche Medical Clinic Backend API server running on http://localhost:${PORT}`);
 });
 
 export default app;
