@@ -1,0 +1,504 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// -------------------------------------------------------------
+// 1. Core Identity & RBAC
+// -------------------------------------------------------------
+model User {
+  id           String           @id @default(uuid())
+  username     String           @unique
+  email        String           @unique
+  passwordHash String
+  fullName     String
+  role         String           // ADMINISTRATOR, RECEPTIONIST, TRIAGE_NURSE, DOCTOR, LAB_TECHNICIAN, PHARMACIST, BILLING_OFFICER, WARD_NURSE, PROCUREMENT_OFFICER, ACCOUNTS_OFFICER, HR_OFFICER
+  department   String?
+  isActive     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  permissions  UserPermission[]
+  auditLogs    AuditLog[]
+}
+
+model Permission {
+  id     String           @id @default(uuid())
+  code   String           @unique // e.g. "patients.create", "lab.verify"
+  name   String
+  module String
+  users  UserPermission[]
+}
+
+model UserPermission {
+  userId       String
+  permissionId String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+}
+
+// -------------------------------------------------------------
+// 2. Patient & Encounter Lifecycle
+// -------------------------------------------------------------
+model Patient {
+  id                 String       @id @default(uuid())
+  mrn                String       @unique // PAT-2026-XXXX
+  nationalId         String?      @unique
+  fullName           String
+  dateOfBirth        DateTime
+  gender             String       // MALE, FEMALE, OTHER
+  phone              String
+  occupation         String?
+  residence          String
+  nextOfKinName      String
+  nextOfKinRelation  String
+  nextOfKinPhone     String
+  nextOfKinAltPhone  String?
+  primaryScheme      String       @default("CASH") // CASH, SHA, INSURANCE
+  schemePolicyNumber String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  encounters         Encounter[]
+  admissions         Admission[]
+}
+
+model Encounter {
+  id              String            @id @default(uuid())
+  encounterNumber String            @unique // ENC-2026-XXXX
+  patientId       String
+  patient         Patient           @relation(fields: [patientId], references: [id])
+  status          String            @default("REGISTERED") // REGISTERED, TRIAGE_WAITING, CONSULTATION_WAITING, LAB_PENDING, PHARMACY_PENDING, BILLING_PENDING, ADMITTED, DISCHARGED, COMPLETED, CANCELLED
+  paymentScheme   String            @default("CASH")
+  schemeNumber    String?
+  startedAt       DateTime          @default(now())
+  endedAt         DateTime?
+  triage          Triage?
+  consultations   Consultation[]
+  labOrders       LaboratoryOrder[]
+  prescriptions   Prescription[]
+  invoices        Invoice[]
+  queueEntries    PatientQueue[]
+  admission       Admission?
+  shaClaims       SHAClaim[]
+}
+
+model PatientQueue {
+  id          String    @id @default(uuid())
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id])
+  department  String    // RECEPTION, TRIAGE, CONSULTATION, LABORATORY, PHARMACY, BILLING, INPATIENT
+  queueNumber Int
+  priority    Int       @default(1) // 1=Normal, 2=Urgent, 3=Emergency
+  status      String    @default("WAITING") // WAITING, CALLED, IN_PROGRESS, COMPLETED, CANCELLED
+  calledAt    DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// -------------------------------------------------------------
+// 3. Clinical & Triage
+// -------------------------------------------------------------
+model Triage {
+  id               String    @id @default(uuid())
+  encounterId      String    @unique
+  encounter        Encounter @relation(fields: [encounterId], references: [id])
+  recordedById     String
+  temperature      Float
+  bloodPressureSys Int
+  bloodPressureDia Int
+  pulseRate        Int
+  respiratoryRate  Int?
+  oxygenSat        Float?
+  weightKg         Float
+  heightCm         Float
+  bmi              Float
+  notes            String?
+  createdAt        DateTime  @default(now())
+}
+
+model Consultation {
+  id             String      @id @default(uuid())
+  encounterId    String
+  encounter      Encounter   @relation(fields: [encounterId], references: [id])
+  doctorId       String
+  doctorName     String?
+  chiefComplaint String
+  history        String
+  examination    String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  diagnoses      Diagnosis[]
+}
+
+model Diagnosis {
+  id             String       @id @default(uuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  icdCode        String?
+  description    String
+  isPrimary      Boolean      @default(false)
+}
+
+// -------------------------------------------------------------
+// 4. Laboratory Diagnostics
+// -------------------------------------------------------------
+model LaboratoryTest {
+  id             String                @id @default(uuid())
+  code           String                @unique
+  name           String
+  category       String                // Hematology, Biochemistry, Microbiology, Serology
+  price          Float
+  unit           String?
+  referenceRange String?
+  items          LaboratoryOrderItem[]
+}
+
+model LaboratoryOrder {
+  id            String                @id @default(uuid())
+  encounterId   String
+  encounter     Encounter             @relation(fields: [encounterId], references: [id])
+  orderedById   String
+  orderedByName String?
+  clinicalNotes String?
+  urgency       String                @default("ROUTINE") // ROUTINE, URGENT, STAT
+  status        String                @default("PENDING") // PENDING, SAMPLE_COLLECTED, COMPLETED
+  createdAt     DateTime              @default(now())
+  items         LaboratoryOrderItem[]
+}
+
+model LaboratoryOrderItem {
+  id              String          @id @default(uuid())
+  orderId         String
+  order           LaboratoryOrder @relation(fields: [orderId], references: [id])
+  testId          String
+  test            LaboratoryTest  @relation(fields: [testId], references: [id])
+  resultValue     String?
+  isAbnormal      Boolean         @default(false)
+  technicianNotes String?
+  testedAt        DateTime?
+  testedById      String?
+  verifiedAt      DateTime?
+  verifiedById    String?
+}
+
+// -------------------------------------------------------------
+// 5. Pharmacy & Drug Inventory
+// -------------------------------------------------------------
+model DrugItem {
+  id            String             @id @default(uuid())
+  code          String             @unique
+  name          String
+  genericName   String
+  category      String
+  unit          String             // tablet, vial, bottle, ampoule
+  purchasePrice Float
+  sellingPrice  Float
+  reorderLevel  Int                @default(10)
+  totalStock    Int                @default(0)
+  batches       DrugBatch[]
+  prescriptions PrescriptionItem[]
+}
+
+model DrugBatch {
+  id          String   @id @default(uuid())
+  drugId      String
+  drug        DrugItem @relation(fields: [drugId], references: [id])
+  batchNumber String
+  expiryDate  DateTime
+  quantity    Int
+  createdAt   DateTime @default(now())
+}
+
+model Prescription {
+  id             String             @id @default(uuid())
+  encounterId    String
+  encounter      Encounter          @relation(fields: [encounterId], references: [id])
+  prescribedById String
+  doctorName     String?
+  status         String             @default("PENDING") // PENDING, DISPENSED, CANCELLED
+  notes          String?
+  createdAt      DateTime           @default(now())
+  items          PrescriptionItem[]
+}
+
+model PrescriptionItem {
+  id                 String       @id @default(uuid())
+  prescriptionId     String
+  prescription       Prescription @relation(fields: [prescriptionId], references: [id])
+  drugId             String
+  drug               DrugItem     @relation(fields: [drugId], references: [id])
+  dosage             String
+  frequency          String
+  durationDays       Int
+  quantityPrescribed Int
+  quantityDispensed  Int          @default(0)
+  dispensedById      String?
+  dispensedAt        DateTime?
+}
+
+model StockMovement {
+  id          String   @id @default(uuid())
+  drugCode    String
+  drugName    String
+  type        String   // RECEIVING, DISPENSING, ADJUSTMENT, RETURN
+  quantity    Int
+  batchNumber String?
+  reason      String?
+  performedBy String
+  createdAt   DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// 6. Inpatient & Ward Management
+// -------------------------------------------------------------
+model Ward {
+  id             String  @id @default(uuid())
+  name           String  @unique // Male Medical, Female Surgical, Pediatric, Maternity
+  genderSpecific String? // MALE, FEMALE, MIXED
+  dailyRate      Float
+  rooms          Room[]
+}
+
+model Room {
+  id         String @id @default(uuid())
+  wardId     String
+  ward       Ward   @relation(fields: [wardId], references: [id])
+  roomNumber String
+  beds       Bed[]
+}
+
+model Bed {
+  id         String      @id @default(uuid())
+  roomId     String
+  room       Room        @relation(fields: [roomId], references: [id])
+  bedNumber  String
+  status     String      @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE
+  admissions Admission[]
+}
+
+model Admission {
+  id              String               @id @default(uuid())
+  patientId       String
+  patient         Patient              @relation(fields: [patientId], references: [id])
+  encounterId     String               @unique
+  encounter       Encounter            @relation(fields: [encounterId], references: [id])
+  bedId           String
+  bed             Bed                  @relation(fields: [bedId], references: [id])
+  admittedAt      DateTime             @default(now())
+  dischargedAt    DateTime?
+  admissionReason String
+  admittingDocId  String
+  admittingDocName String?
+  dischargeNotes  String?
+  dischargeDocId  String?
+  nursingNotes    NursingNote[]
+  drugCharts      DrugAdministration[]
+}
+
+model NursingNote {
+  id          String    @id @default(uuid())
+  admissionId String
+  admission   Admission @relation(fields: [admissionId], references: [id])
+  nurseId     String
+  nurseName   String
+  note        String
+  recordedAt  DateTime  @default(now())
+}
+
+model DrugAdministration {
+  id             String    @id @default(uuid())
+  admissionId    String
+  admission      Admission @relation(fields: [admissionId], references: [id])
+  drugName       String
+  dose           String
+  route          String    // ORAL, IV, IM, SC
+  scheduledTime  DateTime
+  administeredAt DateTime?
+  nurseId        String
+  nurseName      String?
+  status         String    @default("GIVEN") // GIVEN, MISSED, REFUSED
+  notes          String?
+}
+
+// -------------------------------------------------------------
+// 7. Billing & Financial Ledger
+// -------------------------------------------------------------
+model Invoice {
+  id             String        @id @default(uuid())
+  invoiceNumber  String        @unique // INV-2026-XXXX
+  encounterId    String
+  encounter      Encounter     @relation(fields: [encounterId], references: [id])
+  totalAmount    Float         @default(0)
+  discountAmount Float         @default(0)
+  netAmount      Float         @default(0)
+  paidAmount     Float         @default(0)
+  status         String        @default("PENDING") // PENDING, PARTIALLY_PAID, PAID, WAIVED
+  createdAt      DateTime      @default(now())
+  items          InvoiceItem[]
+  payments       Payment[]
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+  description String
+  category    String  // CONSULTATION, LAB, PHARMACY, WARD, PROCEDURE
+  quantity    Int     @default(1)
+  unitPrice   Float
+  totalPrice  Float
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  receiptNumber   String   @unique // REC-2026-XXXX
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+  amount          Float
+  method          String   // CASH, MPESA, BANK_TRANSFER, SHA_CLAIM, INSURANCE
+  referenceNumber String?
+  receivedById    String
+  receivedByName  String?
+  receivedAt      DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// 8. Procurement & Supplies
+// -------------------------------------------------------------
+model Supplier {
+  id             String          @id @default(uuid())
+  name           String
+  contactPerson  String?
+  phone          String
+  email          String?
+  address        String?
+  isActive       Boolean         @default(true)
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id          String   @id @default(uuid())
+  poNumber    String   @unique // PO-2026-XXXX
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  status      String   @default("DRAFT") // DRAFT, APPROVED, ORDERED, RECEIVED, CANCELLED
+  totalAmount Float    @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model Requisition {
+  id              String    @id @default(uuid())
+  reqNumber       String    @unique // REQ-2026-XXXX
+  department      String
+  itemDescription String
+  quantity        Int
+  purpose         String
+  requestedBy     String
+  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, ORDERED
+  createdAt       DateTime  @default(now())
+}
+
+// -------------------------------------------------------------
+// 9. HR & Payroll
+// -------------------------------------------------------------
+model Employee {
+  id          String    @id @default(uuid())
+  staffNumber String    @unique // EMP-001
+  fullName    String
+  department  String
+  designation String
+  phone       String
+  email       String    @unique
+  basicSalary Float
+  hireDate    DateTime
+  isActive    Boolean   @default(true)
+  payrolls    Payroll[]
+  leaves      LeaveApplication[]
+}
+
+model LeaveApplication {
+  id          String    @id @default(uuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveType   String    // ANNUAL, SICK, MATERNITY, EMERGENCY
+  startDate   DateTime
+  endDate     DateTime
+  daysCount   Int
+  reason      String
+  status      String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  appliedAt   DateTime  @default(now())
+}
+
+model Payroll {
+  id          String    @id @default(uuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  month       Int
+  year        Int
+  basicSalary Float
+  allowances  Float     @default(0)
+  deductions  Float     @default(0)
+  netSalary   Float
+  isDisbursed Boolean   @default(false)
+  disbursedAt DateTime?
+}
+
+model JournalEntry {
+  id          String    @id @default(uuid())
+  entryNumber String    @unique // JRN-2026-XXXX
+  date        DateTime  @default(now())
+  description String
+  accountCode String
+  accountName String
+  debit       Float     @default(0)
+  credit      Float     @default(0)
+  reference   String?
+}
+
+// -------------------------------------------------------------
+// 10. Audit Trails & Social Health Authority (SHA)
+// -------------------------------------------------------------
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // CREATE, UPDATE, DELETE, DISPENSE, PAY, ADMIT, DISCHARGE
+  module      String   // PATIENT, CLINICAL, LAB, PHARMACY, BILLING, INPATIENT, ADMIN
+  entityName  String
+  entityId    String
+  detailsJson String?
+  ipAddress   String?
+  timestamp   DateTime @default(now())
+}
+
+model SHAClaim {
+  id              String    @id @default(uuid())
+  claimReference  String    @unique // SHA-CLM-2026-XXXX
+  encounterId     String
+  encounter       Encounter @relation(fields: [encounterId], references: [id])
+  memberNumber    String
+  claimedAmount   Float
+  status          String    @default("PREPARED") // PREPARED, SUBMITTED, APPROVED, REJECTED, RECONCILED
+  submittedAt     DateTime?
+  responseAt      DateTime?
+  responseCode    String?
+  rejectionReason String?
+  rawPayloadJson  String?
+}
+
+model HospitalSettings {
+  id             String  @id @default("1")
+  hospitalName   String  @default("Metropolitan Referral Hospital")
+  address        String  @default("Hospital Road, P.O. Box 40200")
+  phone          String  @default("+254 700 000 000")
+  email          String  @default("info@metrohospital.org")
+  currency       String  @default("KES")
+  motto          String? @default("Excellence in Patient Care & Healing")
+  shaFacilityId  String? @default("SHA-FAC-7890")
+}
