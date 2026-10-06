@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { toast } from 'sonner';
 import {
   Users, UserCheck, Calendar, DollarSign, Plus, RefreshCw,
   Clock, CheckCircle, AlertCircle, Briefcase, FileCheck
@@ -79,9 +80,10 @@ export function HospitalHR() {
       await hrApi.createEmployee(empForm);
       setIsNewEmpOpen(false);
       setEmpForm({ fullName: '', department: 'Clinical Medicine', designation: 'Medical Officer', phone: '', email: '', basicSalary: 120000 });
+      toast.success('Staff employee record created successfully!');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to add employee');
+      toast.error(err.message || 'Failed to add employee');
     }
   };
 
@@ -90,18 +92,20 @@ export function HospitalHR() {
     try {
       await hrApi.createLeave(leaveForm);
       setIsNewLeaveOpen(false);
+      toast.success('Leave application filed successfully!');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to submit leave');
+      toast.error(err.message || 'Failed to submit leave');
     }
   };
 
   const handleUpdateLeave = async (id: string, status: string) => {
     try {
       await hrApi.updateLeaveStatus(id, status);
+      toast.success(`Leave request updated to ${status}`);
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to update leave');
+      toast.error(err.message || 'Failed to update leave');
     }
   };
 
@@ -112,10 +116,10 @@ export function HospitalHR() {
 
     try {
       const res = await hrApi.processPayroll({ month: currentMonth, year: currentYear });
-      alert(res.message);
+      toast.success(res.message || 'Batch payroll executed successfully!');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to process payroll');
+      toast.error(err.message || 'Failed to process payroll');
     }
   };
 

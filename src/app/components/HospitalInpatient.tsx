@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { inpatientApi } from '../lib/api';
+import { inpatientApi, patientApi } from '../lib/api';
+import { toast } from 'sonner';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -9,7 +10,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
   BedDouble, Users, CheckCircle, AlertTriangle, Clock,
-  Activity, Pill, FileText, LogOut, Plus, RefreshCw, ChevronRight
+  Activity, Pill, FileText, LogOut, Plus, RefreshCw, ChevronRight, UserPlus
 } from 'lucide-react';
 
 interface BedModel {
@@ -41,6 +42,18 @@ export function HospitalInpatient() {
   const [drugOpen, setDrugOpen] = useState(false);
   const [drugForm, setDrugForm] = useState({ drugName: '', dose: '', route: 'ORAL' });
 
+  // New Inpatient Admission Modal
+  const [admitModalOpen, setAdmitModalOpen] = useState(false);
+  const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [patientsList, setPatientsList] = useState<any[]>([]);
+  const [admitForm, setAdmitForm] = useState({
+    patientId: '',
+    wardId: '',
+    bedId: '',
+    admissionReason: 'Severe clinical illness requiring 24hr inpatient care and observation',
+  });
+  const [admitting, setAdmitting] = useState(false);
+
   const loadWards = async () => {
     setLoading(true);
     try {
@@ -49,15 +62,29 @@ export function HospitalInpatient() {
       if (data.length > 0 && !selectedWardId) {
         setSelectedWardId(data[0].id);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load wards:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  const loadPatientsForAdmission = async (q = '') => {
+    try {
+      const res = await patientApi.search(q);
+      const list = res.data || [];
+      setPatientsList(list);
+      if (list.length > 0 && !admitForm.patientId) {
+        setAdmitForm((prev) => ({ ...prev, patientId: list[0].id }));
+      }
+    } catch (err) {
+      console.error('Failed to search patients:', err);
+    }
+  };
+
   useEffect(() => {
     loadWards();
+    loadPatientsForAdmission();
   }, []);
 
   const currentWard = wards.find((w) => w.id === selectedWardId) || wards[0];
@@ -75,6 +102,46 @@ export function HospitalInpatient() {
 
   const activeAdmission = selectedBed?.admissions?.[0];
 
+  const handleOpenAdmitModal = (targetBed?: BedModel) => {
+    loadPatientsForAdmission();
+    const bedToUse = targetBed || availableBeds[0];
+    const wardIdToUse = bedToUse?.room?.ward?.name 
+      ? (wards.find((w) => w.name === bedToUse.room?.ward?.name)?.id || selectedWardId)
+      : selectedWardId;
+
+    setAdmitForm((prev) => ({
+      ...prev,
+      wardId: wardIdToUse || (wards[0]?.id || ''),
+      bedId: bedToUse?.id || '',
+    }));
+    setAdmitModalOpen(true);
+  };
+
+  const handleConfirmAdmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!admitForm.patientId || !admitForm.bedId) {
+      toast.error('Please select both a patient and an available bed');
+      return;
+    }
+
+    setAdmitting(true);
+    try {
+      await inpatientApi.admitPatient({
+        patientId: admitForm.patientId,
+        bedId: admitForm.bedId,
+        admissionReason: admitForm.admissionReason || 'Clinical inpatient stay',
+      });
+      toast.success('Patient admitted to bed successfully!');
+      setAdmitModalOpen(false);
+      setSelectedBed(null);
+      await loadWards();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to complete admission');
+    } finally {
+      setAdmitting(false);
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAdmission || !newNote) return;
@@ -83,9 +150,9 @@ export function HospitalInpatient() {
       setNewNote('');
       setNoteOpen(false);
       await loadWards();
-      setSelectedBed(null);
+      toast.success('Nursing note recorded in patient chart');
     } catch (err: any) {
-      alert(err.message || 'Failed to record nursing note');
+      toast.error(err.message || 'Failed to record nursing note');
     }
   };
 
@@ -102,9 +169,9 @@ export function HospitalInpatient() {
       setDrugForm({ drugName: '', dose: '', route: 'ORAL' });
       setDrugOpen(false);
       await loadWards();
-      setSelectedBed(null);
+      toast.success('Medication administration logged in MAR chart');
     } catch (err: any) {
-      alert(err.message || 'Failed to record medication administration');
+      toast.error(err.message || 'Failed to record medication administration');
     }
   };
 
@@ -117,9 +184,9 @@ export function HospitalInpatient() {
       setDischargeOpen(false);
       setSelectedBed(null);
       await loadWards();
-      alert('Patient discharged successfully. Bed released to AVAILABLE.');
+      toast.success('Patient discharged successfully. Bed released to AVAILABLE.');
     } catch (err: any) {
-      alert(err.message || 'Failed to discharge patient');
+      toast.error(err.message || 'Failed to discharge patient');
     }
   };
 
@@ -142,6 +209,10 @@ export function HospitalInpatient() {
           <Button variant="outline" size="sm" onClick={loadWards} disabled={loading} className="gap-1.5 text-xs">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+          <Button size="sm" onClick={() => handleOpenAdmitModal()} className="gap-1.5 text-xs">
+            <UserPlus className="w-3.5 h-3.5" />
+            Admit Patient
           </Button>
         </div>
       </div>
@@ -263,7 +334,7 @@ export function HospitalInpatient() {
                       {patientName ? (
                         <div>
                           <p className="text-[11px] font-semibold text-foreground truncate">{patientName}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">{bed.admissions?.[0]?.diagnosis || 'Inpatient'}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{bed.admissions?.[0]?.admissionReason || bed.admissions?.[0]?.diagnosis || 'Inpatient'}</p>
                         </div>
                       ) : (
                         <p className={`text-[11px] font-medium ${cfg.textClass}`}>{cfg.label}</p>
@@ -409,15 +480,27 @@ export function HospitalInpatient() {
                 </div>
               </div>
             ) : (
-              <div className="py-6 text-center space-y-2">
+              <div className="py-6 text-center space-y-3">
                 <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto" />
-                <h4 className="font-bold text-sm text-foreground">Bed is Available</h4>
-                <p className="text-xs text-muted-foreground">
-                  Ready for new admission from Outpatient Consultation or Emergency.
+                <h4 className="font-bold text-sm text-foreground">Bed {selectedBed.bedNumber} is Available</h4>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  Ready for new admission from Outpatient Consultation, Triage, or Emergency.
                 </p>
-                <div className="pt-4">
+                <div className="pt-2 flex items-center justify-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => setSelectedBed(null)}>
                     Close
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const bed = selectedBed;
+                      setSelectedBed(null);
+                      handleOpenAdmitModal(bed);
+                    }}
+                    className="gap-1.5 text-xs shadow-xs"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Admit Patient to Bed {selectedBed.bedNumber}
                   </Button>
                 </div>
               </div>
@@ -425,6 +508,116 @@ export function HospitalInpatient() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Inpatient Admission Dialog */}
+      <Dialog open={admitModalOpen} onOpenChange={setAdmitModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-primary" />
+              Admit Patient to Inpatient Ward
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleConfirmAdmission} className="space-y-3 text-xs">
+            <div>
+              <Label className="text-xs">Search & Select Patient *</Label>
+              <div className="space-y-1.5 mt-1">
+                <Input
+                  placeholder="Quick filter patients by name / MRN..."
+                  value={patientSearchTerm}
+                  onChange={(e) => {
+                    setPatientSearchTerm(e.target.value);
+                    loadPatientsForAdmission(e.target.value);
+                  }}
+                  className="h-8 text-xs"
+                />
+                <select
+                  value={admitForm.patientId}
+                  onChange={(e) => setAdmitForm({ ...admitForm, patientId: e.target.value })}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs"
+                  required
+                >
+                  <option value="">-- Choose Patient --</option>
+                  {patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.fullName} ({p.mrn} • {p.primaryScheme})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Ward</Label>
+                <select
+                  value={admitForm.wardId}
+                  onChange={(e) => {
+                    const wId = e.target.value;
+                    const ward = wards.find((w) => w.id === wId);
+                    const avail = ward?.rooms?.flatMap((r: any) => r.beds)?.find((b: any) => b.status === 'AVAILABLE');
+                    setAdmitForm({
+                      ...admitForm,
+                      wardId: wId,
+                      bedId: avail?.id || '',
+                    });
+                  }}
+                  className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs mt-1"
+                  required
+                >
+                  <option value="">Select Ward</option>
+                  {wards.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-xs">Bed Assignment *</Label>
+                <select
+                  value={admitForm.bedId}
+                  onChange={(e) => setAdmitForm({ ...admitForm, bedId: e.target.value })}
+                  className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs mt-1 font-mono"
+                  required
+                >
+                  <option value="">Select Bed</option>
+                  {wards
+                    .find((w) => w.id === admitForm.wardId)
+                    ?.rooms?.flatMap((r: any) => r.beds)
+                    ?.filter((b: any) => b.status === 'AVAILABLE')
+                    ?.map((b: any) => (
+                      <option key={b.id} value={b.id}>
+                        Bed {b.bedNumber} (Available)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Admission Indication / Clinical Reason *</Label>
+              <Input
+                placeholder="e.g. Acute severe pneumonia requiring IV antibiotics & monitoring"
+                value={admitForm.admissionReason}
+                onChange={(e) => setAdmitForm({ ...admitForm, admissionReason: e.target.value })}
+                required
+                className="mt-1 text-xs"
+              />
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-border">
+              <Button type="button" variant="outline" size="sm" onClick={() => setAdmitModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={admitting}>
+                {admitting ? 'Admitting...' : 'Confirm Admission'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Nursing Note Modal */}
       <Dialog open={noteOpen} onOpenChange={setNoteOpen}>

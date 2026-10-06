@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { toast } from 'sonner';
 import {
   CreditCard,
   Receipt,
@@ -68,9 +69,10 @@ export function HospitalBilling() {
         referenceNumber: refNumber || null,
       });
       setReceiptSuccess(res.payment);
+      toast.success('Payment recorded successfully! Official receipt generated.');
       fetchInvoices();
     } catch (err: any) {
-      alert(err.message || 'Payment processing failed');
+      toast.error(err.message || 'Payment processing failed');
     } finally {
       setSubmitting(false);
     }

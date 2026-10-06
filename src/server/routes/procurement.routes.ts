@@ -154,6 +154,32 @@ router.post('/purchase-orders', authorizeRoles('ADMINISTRATOR', 'PROCUREMENT'), 
   }
 });
 
+// PUT /api/procurement/purchase-orders/:id/status - Update PO Status (Received / Cancelled)
+router.put('/purchase-orders/:id/status', authorizeRoles('ADMINISTRATOR', 'PROCUREMENT'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const po = await prisma.purchaseOrder.update({
+      where: { id },
+      data: { status },
+      include: { supplier: true },
+    });
+
+    await recordAuditLog({
+      userId: req.user?.id,
+      action: 'UPDATE',
+      module: 'PROCUREMENT',
+      entityName: 'PurchaseOrder',
+      entityId: id,
+      details: { newStatus: status },
+    });
+
+    return res.json(po);
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to update purchase order status' });
+  }
+});
+
 // GET /api/procurement/suppliers - List suppliers
 router.get('/suppliers', authorizeRoles('ADMINISTRATOR', 'PROCUREMENT'), async (req: AuthenticatedRequest, res: Response) => {
   try {

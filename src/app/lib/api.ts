@@ -105,6 +105,11 @@ export const procurementApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  updatePurchaseOrderStatus: (id: string, status: string) =>
+    request<any>(`/procurement/purchase-orders/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
   getSuppliers: () => request<any[]>('/procurement/suppliers'),
   createSupplier: (data: any) =>
     request<any>('/procurement/suppliers', {
@@ -158,6 +163,11 @@ export const patientApi = {
     request<any>('/patients', {
       method: 'POST',
       body: JSON.stringify(patientData),
+    }),
+  createVisit: (patientId: string, visitData: any) =>
+    request<any>(`/patients/${patientId}/encounter`, {
+      method: 'POST',
+      body: JSON.stringify(visitData),
     }),
 };
 
@@ -221,6 +231,11 @@ export const billingApi = {
 
 export const inpatientApi = {
   getWards: () => request<any[]>('/inpatient/wards'),
+  admitPatient: (data: any) =>
+    request<any>('/inpatient/admit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   recordNursingNote: (admissionId: string, note: string) =>
     request<any>('/inpatient/nursing-note', {
       method: 'POST',

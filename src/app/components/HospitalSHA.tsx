@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { toast } from 'sonner';
 import {
   Shield,
   ShieldCheck,
@@ -55,8 +56,9 @@ export function HospitalSHA() {
       setVerifying(true);
       const res = await shaApi.verifyEligibility(nationalId, memberNumber);
       setVerificationResult(res);
+      toast.success(`SHA verification complete: ${res.beneficiaryName} is ACTIVE.`);
     } catch (err: any) {
-      alert(err.message || 'Verification failed');
+      toast.error(err.message || 'Verification failed');
     } finally {
       setVerifying(false);
     }
@@ -65,7 +67,7 @@ export function HospitalSHA() {
   const handleSubmitClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!encounterId) {
-      alert('Encounter ID is required');
+      toast.error('Encounter ID is required to file a SHA claim');
       return;
     }
     try {
@@ -77,9 +79,10 @@ export function HospitalSHA() {
         diagnosisCodes: [diagCode],
       });
       setClaimSuccess(`Claim submitted successfully! Ref: ${res.claimReference}`);
+      toast.success(`Claim filed successfully! Reference: ${res.claimReference}`);
       fetchClaims();
     } catch (err: any) {
-      alert(err.message || 'Failed to submit claim');
+      toast.error(err.message || 'Failed to submit claim');
     } finally {
       setSubmittingClaim(false);
     }

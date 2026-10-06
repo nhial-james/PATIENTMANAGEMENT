@@ -7,10 +7,12 @@ import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { Label } from "./ui/label";
+import { toast } from "sonner";
 import {
   Users, Search, Plus, UserCheck, Clock, CheckCircle,
   Phone, Calendar, Shield, Eye, ChevronLeft, ChevronRight,
-  AlertCircle, Stethoscope, Pill, CreditCard, Activity, CheckCircle2
+  AlertCircle, Stethoscope, Pill, CreditCard, Activity, CheckCircle2,
+  PlayCircle
 } from "lucide-react";
 
 interface PatientRecord {
@@ -40,6 +42,15 @@ export function HospitalPatients() {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+
+  // New Visit / Encounter State
+  const [visitModalOpen, setVisitModalOpen] = useState(false);
+  const [patientForVisit, setPatientForVisit] = useState<PatientRecord | null>(null);
+  const [visitDepartment, setVisitDepartment] = useState<"TRIAGE" | "CONSULTATION">("TRIAGE");
+  const [visitPriority, setVisitPriority] = useState<"NORMAL" | "EMERGENCY">("NORMAL");
+  const [visitScheme, setVisitScheme] = useState<string>("SHA");
+  const [visitNotes, setVisitNotes] = useState<string>("");
+  const [visitSubmitting, setVisitSubmitting] = useState(false);
 
   // Registration Form State
   const [fullName, setFullName] = useState("");
@@ -117,6 +128,39 @@ export function HospitalPatients() {
       console.error("Failed to fetch patient profile:", err);
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const openNewVisitModal = (patient: PatientRecord) => {
+    setPatientForVisit(patient);
+    setVisitScheme(patient.primaryScheme || "SHA");
+    setVisitDepartment("TRIAGE");
+    setVisitPriority("NORMAL");
+    setVisitNotes("");
+    setVisitModalOpen(true);
+  };
+
+  const handleStartVisitSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patientForVisit) return;
+    try {
+      setVisitSubmitting(true);
+      await patientApi.createVisit(patientForVisit.id, {
+        department: visitDepartment,
+        priority: visitPriority,
+        scheme: visitScheme,
+        notes: visitNotes || undefined,
+      });
+      toast.success(`Encounter initiated! ${patientForVisit.fullName} queued to ${visitDepartment}.`);
+      setVisitModalOpen(false);
+      fetchPatients();
+      if (selectedPatient && selectedPatient.id === patientForVisit.id) {
+        handleOpenProfile(patientForVisit.id);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start visit encounter");
+    } finally {
+      setVisitSubmitting(false);
     }
   };
 
@@ -272,15 +316,26 @@ export function HospitalPatients() {
                           </Badge>
                         </td>
                         <td className="p-3 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1"
-                            onClick={() => handleOpenProfile(patient.id)}
-                          >
-                            <Eye className="w-3 h-3" />
-                            Clinical Chart
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-7 text-xs gap-1 shadow-2xs"
+                              onClick={() => openNewVisitModal(patient)}
+                            >
+                              <PlayCircle className="w-3 h-3" />
+                              New Visit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => handleOpenProfile(patient.id)}
+                            >
+                              <Eye className="w-3 h-3" />
+                              Clinical Chart
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -596,7 +651,19 @@ export function HospitalPatients() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex justify-between sm:justify-between items-center">
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  const pat = selectedPatient;
+                  setSelectedPatient(null);
+                  openNewVisitModal(pat);
+                }}
+              >
+                <PlayCircle className="w-3.5 h-3.5" />
+                Queue for New Encounter
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setSelectedPatient(null)}>
                 Close Chart
               </Button>
@@ -604,6 +671,93 @@ export function HospitalPatients() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* New Visit / Encounter Intake Dialog */}
+      <Dialog open={visitModalOpen} onOpenChange={setVisitModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <PlayCircle className="w-5 h-5 text-primary" />
+              Start Clinical Encounter
+            </DialogTitle>
+          </DialogHeader>
+
+          {patientForVisit && (
+            <form onSubmit={handleStartVisitSubmit} className="space-y-4 py-1 text-xs">
+              <div className="p-3 bg-muted/40 rounded-xl border border-border/60 space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-foreground text-sm">{patientForVisit.fullName}</span>
+                  <span className="font-mono text-muted-foreground text-[11px] font-semibold">{patientForVisit.mrn}</span>
+                </div>
+                <div className="text-muted-foreground text-[11px]">
+                  Phone: {patientForVisit.phone} • Registered Scheme: {patientForVisit.primaryScheme}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Intake Department *</Label>
+                <Select value={visitDepartment} onValueChange={(val: any) => setVisitDepartment(val)}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TRIAGE">Outpatient Triage (Vitals Check First)</SelectItem>
+                    <SelectItem value="CONSULTATION">Direct Consultation (Doctor's Clinic)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Priority Level *</Label>
+                  <Select value={visitPriority} onValueChange={(val: any) => setVisitPriority(val)}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NORMAL">Normal Routine</SelectItem>
+                      <SelectItem value="EMERGENCY">Emergency / Priority</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Payment Scheme *</Label>
+                  <Select value={visitScheme} onValueChange={setVisitScheme}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SHA">SHA (Social Health)</SelectItem>
+                      <SelectItem value="CASH">Cash Paying</SelectItem>
+                      <SelectItem value="INSURANCE">Insurance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Chief Complaint / Intake Reason</Label>
+                <Input
+                  value={visitNotes}
+                  onChange={(e) => setVisitNotes(e.target.value)}
+                  placeholder="e.g. Headache, routine follow-up, refill"
+                  className="text-xs"
+                />
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setVisitModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={visitSubmitting}>
+                  {visitSubmitting ? "Queueing Patient..." : "Confirm & Send to Queue"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,11 @@
 import { Layout } from "./components/Layout";
+import { Toaster } from "sonner";
 
 export default function App() {
   return (
-    <Layout />
+    <>
+      <Layout />
+      <Toaster position="top-right" richColors closeButton />
+    </>
   );
 }

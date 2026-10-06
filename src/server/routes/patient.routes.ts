@@ -229,4 +229,95 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// POST /api/patients/:id/encounter - Initiate new clinical visit for existing patient
+router.post('/:id/encounter', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { initialDepartment = 'TRIAGE', paymentScheme, schemePolicyNumber, priority = 1 } = req.body;
+    const patientId = req.params.id;
+
+    const patient = await prisma.patient.findFirst({
+      where: { OR: [{ id: patientId }, { mrn: patientId }] },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const scheme = paymentScheme || patient.primaryScheme;
+    const schemeNumber = schemePolicyNumber || patient.schemePolicyNumber;
+
+    const encCount = await prisma.encounter.count();
+    const encounterNumber = `ENC-2026-${String(encCount + 1).padStart(4, '0')}`;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const encounter = await tx.encounter.create({
+        data: {
+          encounterNumber,
+          patientId: patient.id,
+          status: `${initialDepartment.toUpperCase()}_WAITING`,
+          paymentScheme: scheme,
+          schemeNumber,
+        },
+      });
+
+      const queueCount = await tx.patientQueue.count({
+        where: { department: initialDepartment.toUpperCase() },
+      });
+
+      const queue = await tx.patientQueue.create({
+        data: {
+          encounterId: encounter.id,
+          department: initialDepartment.toUpperCase(),
+          queueNumber: 100 + queueCount + 1,
+          priority: Number(priority),
+          status: 'WAITING',
+        },
+      });
+
+      // Initialize base invoice for consultation visit
+      const invCount = await tx.invoice.count();
+      const invoiceNumber = `INV-2026-${String(invCount + 1).padStart(4, '0')}`;
+      const consultationFee = scheme === 'CASH' ? 500 : 0;
+
+      await tx.invoice.create({
+        data: {
+          invoiceNumber,
+          encounterId: encounter.id,
+          totalAmount: consultationFee,
+          netAmount: consultationFee,
+          status: consultationFee === 0 ? 'PAID' : 'PENDING',
+          items: {
+            create: [
+              {
+                description: `Outpatient Consultation & Intake (${initialDepartment})`,
+                category: 'CONSULTATION',
+                quantity: 1,
+                unitPrice: consultationFee,
+                totalPrice: consultationFee,
+              },
+            ],
+          },
+        },
+      });
+
+      return { patient, encounter, queue };
+    });
+
+    await recordAuditLog({
+      userId: req.user?.id,
+      action: 'CREATE',
+      module: 'ENCOUNTER',
+      entityName: 'Encounter',
+      entityId: result.encounter.id,
+      details: { mrn: patient.mrn, initialDepartment },
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error('Create encounter error:', error);
+    return res.status(500).json({ error: 'Failed to initiate clinical visit' });
+  }
+});
+
 export default router;

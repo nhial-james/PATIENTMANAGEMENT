@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { toast } from 'sonner';
 import {
   Calculator, DollarSign, BookOpen, Scale, Plus, RefreshCw,
   CheckCircle2, ArrowUpRight, ArrowDownRight, TrendingUp
@@ -70,9 +71,10 @@ export function HospitalAccounts() {
         credit: 0,
         reference: '',
       });
+      toast.success('Journal entry posted to General Ledger successfully!');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to post journal entry');
+      toast.error(err.message || 'Failed to post journal entry');
     }
   };
 

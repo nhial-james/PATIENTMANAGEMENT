@@ -13,6 +13,28 @@ import { HospitalAccounts } from './HospitalAccounts';
 import { HospitalHR } from './HospitalHR';
 import { HospitalAdmin } from './HospitalAdmin';
 import { HospitalHeader } from './HospitalHeader';
+import { Button } from './ui/button';
+import { ShieldAlert } from 'lucide-react';
+
+const ROLE_ALLOWED_PAGES: Record<string, string[]> = {
+  ADMINISTRATOR: ['dashboard', 'patients', 'clinical', 'inpatient', 'billing', 'sha', 'procurement', 'accounts', 'hr', 'administration'],
+  DOCTOR: ['patients', 'clinical', 'inpatient'],
+  TRIAGE_NURSE: ['patients', 'clinical'],
+  NURSE: ['patients', 'clinical', 'inpatient'],
+  WARD_NURSE: ['patients', 'clinical', 'inpatient'],
+  LABORATORY: ['clinical'],
+  LAB_TECHNICIAN: ['clinical'],
+  PHARMACIST: ['clinical'],
+  RECEPTIONIST: ['patients', 'clinical'],
+  BILLING: ['patients', 'billing', 'sha'],
+  BILLING_OFFICER: ['patients', 'billing', 'sha'],
+  PROCUREMENT: ['procurement'],
+  PROCUREMENT_OFFICER: ['procurement'],
+  ACCOUNTS: ['billing', 'accounts'],
+  ACCOUNTS_OFFICER: ['billing', 'accounts'],
+  HR: ['hr'],
+  HR_OFFICER: ['hr'],
+};
 
 function getDefaultPageForRole(role: string): string {
   const r = role.toUpperCase();
@@ -80,6 +102,29 @@ export function Layout() {
   }
 
   const renderContent = () => {
+    const userRole = (currentUser.role || '').toUpperCase();
+    const allowed = ROLE_ALLOWED_PAGES[userRole] || ['patients'];
+
+    // Enforce Frontend RBAC Access Boundary
+    if (userRole !== 'ADMINISTRATOR' && !allowed.includes(currentPage)) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-500/10 text-rose-600 border border-rose-500/20">
+            <ShieldAlert className="w-10 h-10" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold text-foreground">Access Restricted (RBAC Policy)</h2>
+            <p className="text-xs text-muted-foreground max-w-md">
+              Your assigned staff role (<span className="font-semibold text-foreground">{currentUser.role}</span>) does not have authorization to view the <span className="font-semibold text-foreground">{currentPage.toUpperCase()}</span> workstation.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setCurrentPage(getDefaultPageForRole(currentUser.role))}>
+            Return to Authorized Workstation
+          </Button>
+        </div>
+      );
+    }
+
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;

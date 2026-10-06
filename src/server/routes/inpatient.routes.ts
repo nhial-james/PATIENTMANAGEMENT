@@ -36,6 +36,107 @@ router.get('/wards', authenticate, async (req, res) => {
   }
 });
 
+// POST /api/inpatient/admit - Admit patient to a specific bed
+router.post('/admit', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { patientId, bedId, admissionReason, encounterId } = req.body;
+    if (!patientId || !bedId || !admissionReason) {
+      return res.status(400).json({ error: 'patientId, bedId, and admissionReason are required' });
+    }
+
+    const bed = await prisma.bed.findUnique({
+      where: { id: bedId },
+      include: { room: { include: { ward: true } } },
+    });
+
+    if (!bed) {
+      return res.status(404).json({ error: 'Bed not found' });
+    }
+
+    if (bed.status === 'OCCUPIED') {
+      return res.status(400).json({ error: `Bed ${bed.bedNumber} is already occupied` });
+    }
+
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+      include: {
+        encounters: {
+          where: { status: { not: 'COMPLETED' } },
+          orderBy: { startedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      let targetEncounterId = encounterId || patient.encounters[0]?.id;
+
+      if (!targetEncounterId) {
+        const encCount = await tx.encounter.count();
+        const encounterNumber = `ENC-2026-${String(encCount + 1).padStart(4, '0')}`;
+        const newEnc = await tx.encounter.create({
+          data: {
+            encounterNumber,
+            patientId: patient.id,
+            status: 'ADMITTED',
+            paymentScheme: patient.primaryScheme,
+            schemeNumber: patient.schemePolicyNumber,
+          },
+        });
+        targetEncounterId = newEnc.id;
+      } else {
+        await tx.encounter.update({
+          where: { id: targetEncounterId },
+          data: { status: 'ADMITTED' },
+        });
+      }
+
+      // Mark bed occupied
+      await tx.bed.update({
+        where: { id: bedId },
+        data: { status: 'OCCUPIED' },
+      });
+
+      // Create admission
+      const admission = await tx.admission.create({
+        data: {
+          patientId: patient.id,
+          encounterId: targetEncounterId,
+          bedId,
+          admissionReason,
+          admittingDocId: req.user?.id || 'doctor-1',
+          admittingDocName: req.user?.fullName || 'Attending Physician',
+        },
+        include: {
+          patient: true,
+          bed: { include: { room: { include: { ward: true } } } },
+        },
+      });
+
+      return admission;
+    });
+
+    await recordAuditLog({
+      userId: req.user?.id,
+      action: 'CREATE',
+      module: 'INPATIENT',
+      entityName: 'Admission',
+      entityId: result.id,
+      details: { bedNumber: bed.bedNumber, reason: admissionReason },
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error('Admission error:', error);
+    return res.status(500).json({ error: 'Failed to admit patient to bed' });
+  }
+});
+
 // POST /api/inpatient/nursing-note - Timestamped nursing notes
 router.post('/nursing-note', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {

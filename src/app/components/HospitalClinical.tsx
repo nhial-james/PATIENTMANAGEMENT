@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { queueApi, triageApi, clinicalApi, labApi, pharmacyApi } from '../lib/api';
+import { queueApi, triageApi, clinicalApi, labApi, pharmacyApi, inpatientApi } from '../lib/api';
+import { toast } from 'sonner';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -10,7 +11,7 @@ import { Label } from './ui/label';
 import {
   Users, Activity, Stethoscope, TestTube, Pill, CreditCard,
   Clock, AlertCircle, CheckCircle, ArrowRight, User, Shield,
-  RefreshCw, Plus, CheckCircle2
+  RefreshCw, Plus, CheckCircle2, BedDouble
 } from 'lucide-react';
 
 interface QueueItem {
@@ -86,14 +87,26 @@ export function HospitalClinical() {
 
   // Consultation Form
   const [consultOpen, setConsultOpen] = useState(false);
+  const [availableLabTests, setAvailableLabTests] = useState<any[]>([]);
+  const [availableDrugs, setAvailableDrugs] = useState<any[]>([]);
+  const [availableWards, setAvailableWards] = useState<any[]>([]);
+  const [consultSubmitting, setConsultSubmitting] = useState(false);
   const [consultForm, setConsultForm] = useState({
-    chiefComplaint: '',
-    history: '',
-    examination: '',
+    chiefComplaint: 'Acute febrile illness, headache, and joint pains',
+    history: 'Symptoms started 3 days ago. Progressive fatigue with chills at night.',
+    examination: 'Temp 38.2°C, mild pallor, throat clear, chest clear to auscultation.',
     icdCode: 'B54',
     diagnosisDescription: 'Unspecified Malaria',
-    labTestCode: 'LAB-MPS',
-    prescribeDrug: 'MED-AL-6X4',
+    selectedLabTestId: '',
+    selectedDrugId: '',
+    drugDosage: '1 tablet',
+    drugFrequency: 'TDS (3x daily)',
+    drugDurationDays: 5,
+    drugQuantity: 15,
+    nextDepartment: 'LABORATORY',
+    admissionWardId: '',
+    admissionBedId: '',
+    admissionReason: 'Severe clinical illness requiring inpatient parenteral therapy',
   });
 
   // Lab Result Modal
@@ -119,23 +132,47 @@ export function HospitalClinical() {
         newMap[r.dept] = r.items;
       }
       setQueues(newMap);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load queues:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  const loadClinicalCatalogs = async () => {
+    try {
+      const [tests, inventory, wards] = await Promise.all([
+        labApi.getTests().catch(() => []),
+        pharmacyApi.getInventory().catch(() => []),
+        inpatientApi.getWards().catch(() => []),
+      ]);
+      setAvailableLabTests(tests);
+      setAvailableDrugs(inventory);
+      setAvailableWards(wards);
+
+      if (tests.length > 0 && !consultForm.selectedLabTestId) {
+        setConsultForm((prev) => ({ ...prev, selectedLabTestId: tests[0].id }));
+      }
+      if (inventory.length > 0 && !consultForm.selectedDrugId) {
+        setConsultForm((prev) => ({ ...prev, selectedDrugId: inventory[0].id }));
+      }
+    } catch (err) {
+      console.error('Failed to load clinical catalogs:', err);
+    }
+  };
+
   useEffect(() => {
     loadAllQueues();
+    loadClinicalCatalogs();
   }, []);
 
   const handleCallPatient = async (item: QueueItem) => {
     try {
       await queueApi.call(item.id);
       await loadAllQueues();
+      toast.info(`Patient ${item.encounter?.patient?.fullName || ''} (#${item.queueNumber}) called to station`);
     } catch (err: any) {
-      alert(err.message || 'Failed to call patient');
+      toast.error(err.message || 'Failed to call patient');
     }
   };
 
@@ -143,8 +180,9 @@ export function HospitalClinical() {
     try {
       await queueApi.start(item.id);
       await loadAllQueues();
+      toast.success(`Consultation active for ${item.encounter?.patient?.fullName || ''}`);
     } catch (err: any) {
-      alert(err.message || 'Failed to start consultation');
+      toast.error(err.message || 'Failed to start consultation');
     }
   };
 
@@ -152,8 +190,9 @@ export function HospitalClinical() {
     try {
       await queueApi.route(item.id, nextDept, 1, `${nextDept}_WAITING`);
       await loadAllQueues();
+      toast.success(`Patient routed forward to ${nextDept}`);
     } catch (err: any) {
-      alert(err.message || 'Failed to route patient');
+      toast.error(err.message || 'Failed to route patient');
     }
   };
 
@@ -185,9 +224,9 @@ export function HospitalClinical() {
       setTriageOpen(false);
       setSelectedQueueItem(null);
       await loadAllQueues();
-      alert('Vitals saved! Patient routed to Doctor Consultation.');
+      toast.success('Vitals recorded! Patient queued to Doctor Consultation.');
     } catch (err: any) {
-      alert(err.message || 'Failed to record vitals');
+      toast.error(err.message || 'Failed to record vitals');
     }
   };
 
@@ -196,31 +235,57 @@ export function HospitalClinical() {
     e.preventDefault();
     if (!selectedQueueItem) return;
 
+    setConsultSubmitting(true);
     try {
-      await clinicalApi.recordConsultation({
+      const payload: any = {
         encounterId: selectedQueueItem.encounter.id,
-        queueId: selectedQueueItem.id,
-        chiefComplaint: consultForm.chiefComplaint || 'Acute febrile illness, joint pains',
+        chiefComplaint: consultForm.chiefComplaint || 'Acute febrile illness',
         history: consultForm.history || 'Symptoms progressive over 3 days.',
-        examination: consultForm.examination || 'Mild pallor, vital signs recorded, chest clear.',
+        examination: consultForm.examination || 'General condition fair, vitals recorded.',
         diagnoses: [
           {
-            icdCode: consultForm.icdCode,
-            description: consultForm.diagnosisDescription,
+            icdCode: consultForm.icdCode || 'B54',
+            description: consultForm.diagnosisDescription || 'Malaria',
             isPrimary: true,
           },
         ],
-        labTests: consultForm.labTestCode ? [{ testCode: consultForm.labTestCode }] : [],
-        prescriptions: consultForm.prescribeDrug ? [{ drugCode: consultForm.prescribeDrug, quantity: 24 }] : [],
-        routeTo: consultForm.labTestCode ? 'LABORATORY' : 'PHARMACY',
-      });
+        nextDepartment: consultForm.nextDepartment,
+      };
+
+      if (consultForm.selectedLabTestId) {
+        payload.labTestIds = [consultForm.selectedLabTestId];
+      }
+
+      if (consultForm.selectedDrugId) {
+        payload.prescriptions = [
+          {
+            drugId: consultForm.selectedDrugId,
+            dosage: consultForm.drugDosage || '1 tablet',
+            frequency: consultForm.drugFrequency || 'TDS (3x daily)',
+            durationDays: Number(consultForm.drugDurationDays) || 5,
+            quantityPrescribed: Number(consultForm.drugQuantity) || 15,
+          },
+        ];
+      }
+
+      if (consultForm.nextDepartment === 'INPATIENT' && consultForm.admissionBedId) {
+        payload.admissionDetails = {
+          wardId: consultForm.admissionWardId,
+          bedId: consultForm.admissionBedId,
+          admissionReason: consultForm.admissionReason || consultForm.diagnosisDescription,
+        };
+      }
+
+      await clinicalApi.recordConsultation(payload);
 
       setConsultOpen(false);
       setSelectedQueueItem(null);
       await loadAllQueues();
-      alert(`Consultation recorded! Patient routed to ${consultForm.labTestCode ? 'Laboratory' : 'Pharmacy'}.`);
+      toast.success(`Consultation recorded! Routed to ${consultForm.nextDepartment}.`);
     } catch (err: any) {
-      alert(err.message || 'Failed to record consultation');
+      toast.error(err.message || 'Failed to record consultation');
+    } finally {
+      setConsultSubmitting(false);
     }
   };
 
@@ -231,7 +296,7 @@ export function HospitalClinical() {
       setLabOrders(orders);
       setLabOpen(true);
     } catch (err: any) {
-      alert('Failed to load lab orders');
+      toast.error('Failed to load lab orders');
     }
   };
 
@@ -247,9 +312,9 @@ export function HospitalClinical() {
       const updated = await labApi.getOrders();
       setLabOrders(updated);
       await loadAllQueues();
-      alert('Lab result validated and recorded in patient chart.');
+      toast.success('Lab result validated and recorded in chart.');
     } catch (err: any) {
-      alert(err.message || 'Failed to validate lab results');
+      toast.error(err.message || 'Failed to validate lab results');
     }
   };
 
@@ -260,7 +325,7 @@ export function HospitalClinical() {
       setPrescriptions(rxs);
       setRxOpen(true);
     } catch (err: any) {
-      alert('Failed to load prescriptions');
+      toast.error('Failed to load prescriptions');
     }
   };
 
@@ -275,9 +340,9 @@ export function HospitalClinical() {
       const updated = await pharmacyApi.getPrescriptions();
       setPrescriptions(updated);
       await loadAllQueues();
-      alert('Medication dispensed! Stock levels deducted in database.');
+      toast.success('Medication dispensed! Stock levels deducted.');
     } catch (err: any) {
-      alert(err.message || 'Failed to dispense medication');
+      toast.error(err.message || 'Failed to dispense medication');
     }
   };
 
@@ -704,44 +769,202 @@ export function HospitalClinical() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Diagnostic Lab Order</Label>
                 <select
-                  value={consultForm.labTestCode}
-                  onChange={(e) => setConsultForm({ ...consultForm, labTestCode: e.target.value })}
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm mt-1"
+                  value={consultForm.selectedLabTestId}
+                  onChange={(e) => {
+                    const testId = e.target.value;
+                    setConsultForm({
+                      ...consultForm,
+                      selectedLabTestId: testId,
+                      nextDepartment: testId ? 'LABORATORY' : consultForm.selectedDrugId ? 'PHARMACY' : 'BILLING',
+                    });
+                  }}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs mt-1"
                 >
                   <option value="">No Lab Order</option>
-                  <option value="LAB-MPS">Malaria Blood Slide (BS for MPS)</option>
-                  <option value="LAB-CBC">Complete Blood Count (CBC)</option>
-                  <option value="LAB-UA">Urinalysis Dipstick</option>
-                  <option value="LAB-FBS">Fasting Blood Sugar</option>
-                  <option value="LAB-LFT">Liver Function Panel</option>
+                  {availableLabTests.length > 0 ? (
+                    availableLabTests.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.code}) — KES {t.price?.toLocaleString()}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="test-mps">Malaria Blood Slide (BS for MPS) — KES 400</option>
+                      <option value="test-cbc">Complete Blood Count (CBC) — KES 1,200</option>
+                      <option value="test-ua">Urinalysis Dipstick — KES 600</option>
+                      <option value="test-fbs">Fasting Blood Sugar — KES 350</option>
+                    </>
+                  )}
                 </select>
               </div>
+
               <div>
                 <Label className="text-xs">Prescription Medication</Label>
                 <select
-                  value={consultForm.prescribeDrug}
-                  onChange={(e) => setConsultForm({ ...consultForm, prescribeDrug: e.target.value })}
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm mt-1"
+                  value={consultForm.selectedDrugId}
+                  onChange={(e) => {
+                    const drugId = e.target.value;
+                    setConsultForm({
+                      ...consultForm,
+                      selectedDrugId: drugId,
+                      nextDepartment: consultForm.selectedLabTestId ? 'LABORATORY' : drugId ? 'PHARMACY' : 'BILLING',
+                    });
+                  }}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs mt-1"
                 >
                   <option value="">No Medication</option>
-                  <option value="MED-AL-6X4">Artemether-Lumefantrine 20/120mg (AL)</option>
-                  <option value="MED-PARA-500">Paracetamol 500mg Tablets</option>
-                  <option value="MED-AMOX-500">Amoxicillin 500mg Capsules</option>
-                  <option value="MED-OMEP-20">Omeprazole 20mg Capsules</option>
+                  {availableDrugs.length > 0 ? (
+                    availableDrugs.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} (Stock: {d.totalStock}) — KES {d.sellingPrice}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="drug-al">Artemether-Lumefantrine 20/120mg (AL)</option>
+                      <option value="drug-para">Paracetamol 500mg Tablets</option>
+                      <option value="drug-amox">Amoxicillin 500mg Capsules</option>
+                      <option value="drug-omep">Omeprazole 20mg Capsules</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
 
-            <DialogFooter>
+            {consultForm.selectedDrugId && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded-lg bg-muted/40 border border-border">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Dosage</Label>
+                  <Input
+                    value={consultForm.drugDosage}
+                    onChange={(e) => setConsultForm({ ...consultForm, drugDosage: e.target.value })}
+                    className="h-7 text-xs mt-0.5"
+                    placeholder="1 tab"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Frequency</Label>
+                  <Input
+                    value={consultForm.drugFrequency}
+                    onChange={(e) => setConsultForm({ ...consultForm, drugFrequency: e.target.value })}
+                    className="h-7 text-xs mt-0.5"
+                    placeholder="TDS (3x/day)"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Days</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={consultForm.drugDurationDays}
+                    onChange={(e) => setConsultForm({ ...consultForm, drugDurationDays: parseInt(e.target.value, 10) || 1 })}
+                    className="h-7 text-xs mt-0.5 font-mono"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Total Qty</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={consultForm.drugQuantity}
+                    onChange={(e) => setConsultForm({ ...consultForm, drugQuantity: parseInt(e.target.value, 10) || 1 })}
+                    className="h-7 text-xs mt-0.5 font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Destination Department Selector */}
+            <div className="p-2.5 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+              <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <ArrowRight className="w-3.5 h-3.5 text-primary" />
+                Next Department / Care Transition *
+              </Label>
+              <select
+                value={consultForm.nextDepartment}
+                onChange={(e) => setConsultForm({ ...consultForm, nextDepartment: e.target.value as any })}
+                className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs"
+                required
+              >
+                <option value="LABORATORY">🔬 Diagnostic Laboratory (Run Ordered Tests)</option>
+                <option value="PHARMACY">💊 Pharmacy Dispensary (Dispense Prescription)</option>
+                <option value="INPATIENT">🛏️ Inpatient Admission (Transfer to Ward Bed)</option>
+                <option value="BILLING">💳 Cashier & Billing (Proceed to Payment)</option>
+                <option value="COMPLETED">✅ Completed & Cleared (Discharge Outpatient)</option>
+              </select>
+
+              {consultForm.nextDepartment === 'INPATIENT' && (
+                <div className="pt-2 border-t border-border/50 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[11px]">Select Ward</Label>
+                      <select
+                        value={consultForm.admissionWardId}
+                        onChange={(e) => {
+                          const wId = e.target.value;
+                          const ward = availableWards.find((w) => w.id === wId);
+                          const firstAvailBed = ward?.rooms?.flatMap((r: any) => r.beds)?.find((b: any) => b.status === 'AVAILABLE');
+                          setConsultForm({
+                            ...consultForm,
+                            admissionWardId: wId,
+                            admissionBedId: firstAvailBed?.id || '',
+                          });
+                        }}
+                        className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs mt-1"
+                      >
+                        <option value="">Choose Ward</option>
+                        {availableWards.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} (KES {w.dailyRate}/day)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px]">Select Available Bed</Label>
+                      <select
+                        value={consultForm.admissionBedId}
+                        onChange={(e) => setConsultForm({ ...consultForm, admissionBedId: e.target.value })}
+                        className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs mt-1 font-mono"
+                      >
+                        <option value="">Choose Bed</option>
+                        {availableWards
+                          .find((w) => w.id === consultForm.admissionWardId)
+                          ?.rooms?.flatMap((r: any) => r.beds)
+                          ?.filter((b: any) => b.status === 'AVAILABLE')
+                          ?.map((b: any) => (
+                            <option key={b.id} value={b.id}>
+                              Bed {b.bedNumber} (Available)
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px]">Clinical Admission Indication</Label>
+                    <Input
+                      value={consultForm.admissionReason}
+                      onChange={(e) => setConsultForm({ ...consultForm, admissionReason: e.target.value })}
+                      placeholder="e.g. Severe malaria with persistent vomiting and dehydration"
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-border">
               <Button type="button" variant="outline" size="sm" onClick={() => setConsultOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm">
-                Commit Clinical Orders & Route
+              <Button type="submit" size="sm" disabled={consultSubmitting}>
+                {consultSubmitting ? 'Recording & Routing...' : 'Commit Clinical Orders & Route'}
               </Button>
             </DialogFooter>
           </form>
