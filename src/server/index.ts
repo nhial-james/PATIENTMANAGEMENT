@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import prisma from './prisma';
+import { seedDatabase } from './services/seed.service';
 import authRoutes from './routes/auth.routes';
 import patientRoutes from './routes/patient.routes';
 import queueRoutes from './routes/queue.routes';
@@ -32,9 +34,25 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'Puche Medical Clinic Backend API Engine', timestamp: new Date() });
+// Health Check with live database diagnostics
+app.get('/api/health', async (req, res) => {
+  try {
+    const userCount = await prisma.user.count();
+    res.json({
+      status: 'ok',
+      service: 'Puche Medical Clinic Backend API Engine',
+      userCount,
+      timestamp: new Date(),
+    });
+  } catch (err: any) {
+    res.json({
+      status: 'ok',
+      service: 'Puche Medical Clinic Backend API Engine',
+      databaseStatus: 'uninitialized',
+      error: err?.message,
+      timestamp: new Date(),
+    });
+  }
 });
 
 // Mount Routes
@@ -59,8 +77,35 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
-app.listen(PORT, () => {
+// Auto-seed database if empty or unseeded
+async function ensureDatabaseReady() {
+  try {
+    const adminUser = await prisma.user.findFirst({ where: { username: 'admin' } });
+    if (!adminUser) {
+      console.log('⚡ Admin account not found. Automatically initializing & seeding database...');
+      await seedDatabase();
+      console.log('✅ Auto-seed completed successfully!');
+    } else {
+      console.log('✅ Database verified: staff accounts are ready.');
+    }
+  } catch (error: any) {
+    console.warn('⚠️ Database query failed on startup, checking schema state...', error?.message);
+    try {
+      const { execSync } = await import('child_process');
+      console.log('🔄 Executing automatic prisma db push...');
+      execSync('npx prisma db push --skip-generate', { stdio: 'inherit' });
+      console.log('✅ Prisma db push executed. Now seeding database...');
+      await seedDatabase();
+      console.log('✅ Auto-seed completed successfully!');
+    } catch (pushErr) {
+      console.error('❌ Failed to auto-initialize database schema:', pushErr);
+    }
+  }
+}
+
+app.listen(PORT, async () => {
   console.log(`🚀 Puche Medical Clinic Backend API server running on http://localhost:${PORT}`);
+  await ensureDatabaseReady();
 });
 
 export default app;
