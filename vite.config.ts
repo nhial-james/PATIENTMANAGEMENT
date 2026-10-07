@@ -14,6 +14,14 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts: [
+      'patient.craygroup.biz',
+      'localhost',
+      // add any other hostnames you use, e.g. 'staging.craygroup.biz'
+    ],
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

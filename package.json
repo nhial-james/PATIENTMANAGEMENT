@@ -4,12 +4,16 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "dev": "concurrently -n client,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "dev:server": "tsx src/server/index.ts",
     "build": "vite build",
-    "dev": "vite",
     "server": "tsx src/server/index.ts",
-    "start": "concurrently \"vite\" \"tsx src/server/index.ts\"",
+    "start": "concurrently -n client,server -c blue,green \"npm:start:client\" \"npm:start:server\"",
+    "start:client": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "start:server": "tsx src/server/index.ts",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
+    "prisma:push": "prisma db push --skip-generate",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
