@@ -447,39 +447,37 @@ export async function seedDatabase(customPrisma?: PrismaClient) {
       // Laboratory orders
       const labOrder = await prisma.laboratoryOrder.create({
         data: {
-          orderNumber: `LAB-ORD-2026-000${idx + 1}`,
           encounterId: encounter.id,
           orderedById: 'doctor-kevin',
-          status: idx === 0 ? 'COMPLETED' : idx === 1 ? 'IN_PROGRESS' : 'PENDING',
-          notes: 'Urgent diagnostic screening requested.',
+          orderedByName: 'Dr. Kevin Ochieng, MD',
+          status: idx === 0 ? 'COMPLETED' : idx === 1 ? 'SAMPLE_COLLECTED' : 'PENDING',
+          clinicalNotes: 'Urgent diagnostic screening requested.',
+          urgency: 'ROUTINE',
         },
       });
 
-      await prisma.laboratoryOrderItem.create({
-        data: {
-          orderId: labOrder.id,
-          testId: 'LAB-CBC',
-          testName: 'Complete Blood Count (CBC)',
-          price: 1200,
-          status: idx === 0 ? 'COMPLETED' : 'PENDING',
-          resultValue: idx === 0 ? 'WBC: 11.2, Hb: 13.8 g/dL, Platelets: 245' : null,
-          referenceRange: 'Normal parameters',
-          isAbnormal: idx === 0 ? false : false,
-          verifiedAt: idx === 0 ? new Date() : null,
-          verifiedById: idx === 0 ? 'laboratory-staff-id' : null,
-        },
-      });
+      const cbcTest = await prisma.laboratoryTest.findUnique({ where: { code: 'LAB-CBC' } });
+      const mpsTest = await prisma.laboratoryTest.findUnique({ where: { code: 'LAB-MPS' } });
 
-      if (idx === 0) {
+      if (cbcTest) {
         await prisma.laboratoryOrderItem.create({
           data: {
             orderId: labOrder.id,
-            testId: 'LAB-MPS',
-            testName: 'Malaria Blood Slide (BS for MPS)',
-            price: 400,
-            status: 'COMPLETED',
+            testId: cbcTest.id,
+            resultValue: idx === 0 ? 'WBC: 11.2, Hb: 13.8 g/dL, Platelets: 245' : null,
+            isAbnormal: false,
+            verifiedAt: idx === 0 ? new Date() : null,
+            verifiedById: idx === 0 ? 'laboratory-staff-id' : null,
+          },
+        });
+      }
+
+      if (idx === 0 && mpsTest) {
+        await prisma.laboratoryOrderItem.create({
+          data: {
+            orderId: labOrder.id,
+            testId: mpsTest.id,
             resultValue: 'Positive (++) Plasmodium falciparum ring forms',
-            referenceRange: 'Negative',
             isAbnormal: true,
             verifiedAt: new Date(),
             verifiedById: 'laboratory-staff-id',
@@ -490,44 +488,48 @@ export async function seedDatabase(customPrisma?: PrismaClient) {
       // Prescriptions
       const prescription = await prisma.prescription.create({
         data: {
-          prescriptionNumber: `RX-2026-000${idx + 1}`,
           encounterId: encounter.id,
-          doctorId: 'doctor-kevin',
+          prescribedById: 'doctor-kevin',
           doctorName: 'Dr. Kevin Ochieng, MD',
           status: idx === 2 ? 'DISPENSED' : 'PENDING',
           notes: 'Take full course as prescribed with meals.',
         },
       });
 
-      await prisma.prescriptionItem.create({
-        data: {
-          prescriptionId: prescription.id,
-          drugId: 'MED-AL-6X4',
-          drugName: 'Artemether-Lumefantrine 20/120mg (AL)',
-          dosage: '4 tablets stat, then 4 tablets at 8h, 24h, 36h, 48h, 60h',
-          frequency: 'Twice daily for 3 days',
-          duration: '3 days',
-          quantity: 24,
-          unitPrice: 350,
-          totalPrice: 350,
-          isDispensed: idx === 2 ? true : false,
-        },
-      });
+      const alDrug = await prisma.drugItem.findUnique({ where: { code: 'MED-AL-6X4' } });
+      const paraDrug = await prisma.drugItem.findUnique({ where: { code: 'MED-PARA-500' } });
 
-      await prisma.prescriptionItem.create({
-        data: {
-          prescriptionId: prescription.id,
-          drugId: 'MED-PARA-500',
-          drugName: 'Paracetamol 500mg Tablets',
-          dosage: '1000mg',
-          frequency: 'TDS (3 times daily)',
-          duration: '5 days',
-          quantity: 15,
-          unitPrice: 5,
-          totalPrice: 75,
-          isDispensed: idx === 2 ? true : false,
-        },
-      });
+      if (alDrug) {
+        await prisma.prescriptionItem.create({
+          data: {
+            prescriptionId: prescription.id,
+            drugId: alDrug.id,
+            dosage: '4 tablets stat, then 4 tablets at 8h, 24h, 36h, 48h, 60h',
+            frequency: 'Twice daily for 3 days',
+            durationDays: 3,
+            quantityPrescribed: 24,
+            quantityDispensed: idx === 2 ? 24 : 0,
+            dispensedById: idx === 2 ? 'pharmacy-staff-id' : null,
+            dispensedAt: idx === 2 ? new Date() : null,
+          },
+        });
+      }
+
+      if (paraDrug) {
+        await prisma.prescriptionItem.create({
+          data: {
+            prescriptionId: prescription.id,
+            drugId: paraDrug.id,
+            dosage: '1000mg',
+            frequency: 'TDS (3 times daily)',
+            durationDays: 5,
+            quantityPrescribed: 15,
+            quantityDispensed: idx === 2 ? 15 : 0,
+            dispensedById: idx === 2 ? 'pharmacy-staff-id' : null,
+            dispensedAt: idx === 2 ? new Date() : null,
+          },
+        });
+      }
 
       // Invoice
       const invoice = await prisma.invoice.create({
@@ -594,14 +596,12 @@ export async function seedDatabase(customPrisma?: PrismaClient) {
         if (availableBed) {
           const admission = await prisma.admission.create({
             data: {
-              admissionNumber: 'ADM-2026-0001',
               encounterId: encounter.id,
               patientId: patient.id,
               bedId: availableBed.id,
-              admittedById: 'doctor-kevin',
-              admittedByName: 'Dr. Kevin Ochieng, MD',
-              diagnosis: 'Hypertensive Urgency, stage 2 with end-organ risk',
-              status: 'ADMITTED',
+              admittingDocId: 'doctor-kevin',
+              admittingDocName: 'Dr. Kevin Ochieng, MD',
+              admissionReason: 'Hypertensive Urgency, stage 2 with end-organ risk',
             },
           });
 
@@ -623,9 +623,13 @@ export async function seedDatabase(customPrisma?: PrismaClient) {
             data: {
               admissionId: admission.id,
               drugName: 'Amlodipine 10mg stat',
-              dosage: '10mg PO',
-              administeredById: 'nurse-grace',
-              administeredByName: 'Sister Grace Muthoni',
+              dose: '10mg',
+              route: 'ORAL',
+              scheduledTime: new Date(),
+              administeredAt: new Date(),
+              nurseId: 'nurse-grace',
+              nurseName: 'Sister Grace Muthoni',
+              status: 'GIVEN',
             },
           });
         }
