@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-ENV NODE_ENV=production \
-    PORT=3000
+ENV PORT=3000
+# NOTE: NODE_ENV is intentionally NOT set here.
+# Setting it here would make `npm ci` in the deps stage skip devDependencies,
+# which we need (tsx, vite, prisma CLI, concurrently).
 
 # ---------- Dependencies ----------
 FROM base AS deps
@@ -18,8 +20,8 @@ FROM base AS deps
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 
-# Install ALL deps (including dev) so prisma CLI + tsx are available
-RUN npm ci
+# Install ALL deps (including dev) so prisma CLI + tsx + vite are available
+RUN npm ci --include=dev
 
 # Generate Prisma Client for the runtime platform
 RUN npx prisma generate
@@ -28,25 +30,36 @@ RUN npx prisma generate
 FROM base AS builder
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/prisma ./prisma
+COPY --from=deps /app/prisma       ./prisma
 COPY . .
 
-# If you have a build step (tsc, next build, vite, etc.), run it here.
-# Remove if your app runs directly from source.
+# If you have a real build step (tsc, vite build, etc.), enable it here.
 # RUN npm run build
 
 # ---------- Runner ----------
 FROM base AS runner
 
+# Production env only for the runtime stage
+ENV NODE_ENV=production
+
 # Non-root user
 RUN groupadd --system --gid 1001 nodejs \
  && useradd  --system --uid 1001 --gid nodejs appuser
 
-# Copy everything we need
+# Copy dependencies and Prisma artifacts from builder
 COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=appuser:nodejs /app/prisma       ./prisma
 COPY --from=builder --chown=appuser:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=appuser:nodejs /app ./
+COPY --from=builder --chown=appuser:nodejs /app/package-lock.json* ./
+
+# Copy only the source / config files the app needs at runtime.
+# DO NOT `COPY --from=builder /app ./` — it would clobber /app/node_modules.
+COPY --from=builder --chown=appuser:nodejs /app/src            ./src
+COPY --from=builder --chown=appuser:nodejs /app/prisma         ./prisma
+COPY --from=builder --chown=appuser:nodejs /app/vite.config.ts ./vite.config.ts
+COPY --from=builder --chown=appuser:nodejs /app/vite.config.js ./vite.config.js
+COPY --from=builder --chown=appuser:nodejs /app/tsconfig.json  ./tsconfig.json
+COPY --from=builder --chown=appuser:nodejs /app/index.html     ./index.html
 
 # Folder for the SQLite DB (mounted as a volume in production)
 RUN mkdir -p /app/data && chown -R appuser:nodejs /app/data

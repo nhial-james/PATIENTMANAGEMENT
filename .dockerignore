@@ -1,0 +1,47 @@
+# dependencies
+node_modules
+*/node_modules
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files
+.env
+.env.*
+!.env.example
+
+# vcs
+.git
+.gitignore
+.gitattributes
+
+# local db / prisma artifacts
+dev.db
+dev.db-journal
+*.sqlite
+*.sqlite3
+prisma/dev.db
+prisma/dev.db-journal
+
+# build output (rebuilt inside image)
+dist
+build
+coverage
+
+# editor
+.vscode
+.idea
+*.swp
+
+# docker / ci
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# misc
+*.md
+README*
+LICENSE
