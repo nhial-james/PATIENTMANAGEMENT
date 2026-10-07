@@ -1,5 +1,6 @@
 # Puche Medical Clinic – Clinical Management Platform
 
+
 **Facility Code:** `SHA-FAC-7890-KEN`  
 **Architecture:** React 18, Vite, TypeScript, Tailwind CSS, Express, Prisma ORM, SQLite  
 **Security:** Bcrypt Hashing, Role-Based Access Control (RBAC), Audit Trails, SHA-Ready  
