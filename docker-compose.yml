@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 5173
       DATABASE_URL: "file:/app/data/dev.db"
       SEED_ON_START: "true"
       # Trust Nginx as the proxy so req.ip is correct
@@ -14,9 +14,9 @@ services:
     volumes:
       - pm-data:/app/data
     expose:
-      - "3000"          # internal only; Nginx talks to this
+      - "5173"          # internal only; Nginx talks to this
     # ports:            # uncomment to bypass Nginx for debugging
-    #   - "3000:3000"
+    #   - "5173:5173"
 
   nginx:
     image: nginx:1.27-alpine

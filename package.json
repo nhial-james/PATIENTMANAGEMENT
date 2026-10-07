@@ -4,15 +4,10 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
-    "dev:client": "vite",
-    "dev:server": "tsx src/server/index.ts",
-
     "build": "vite build",
-    "start": "concurrently \"npm:start:client\" \"npm:start:server\"",
-    "start:client": "vite --host=0.0.0.0",
-    "start:server": "tsx src/server/index.ts",
-
+    "dev": "vite",
+    "server": "tsx src/server/index.ts",
+    "start": "concurrently \"vite\" \"tsx src/server/index.ts\"",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts"

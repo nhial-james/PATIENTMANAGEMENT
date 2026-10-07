@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-ENV PORT=3000
+ENV PORT=5173
 # NODE_ENV deliberately NOT set here, so deps stage installs devDependencies.
 
 # ---------- Dependencies ----------
@@ -56,7 +56,7 @@ COPY --from=builder --chown=appuser:nodejs /app/default_shadcn_theme.css ./defau
 RUN mkdir -p /app/data && chown -R appuser:nodejs /app/data
 
 USER appuser
-EXPOSE 3000
+EXPOSE 5173
 
 COPY --chown=appuser:nodejs docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
